@@ -251,9 +251,6 @@ public class StudentNetworkSimulator extends NetworkSimulator
         }
     }
 
-    static class receiverState{
-        public final
-    }
 
     private static int computeCheckSum(int sequenceNumber , int acknowledgementNumber , String message){
         int sum = sequenceNumber + acknowledgementNumber + characterSum(message.toCharArray());
