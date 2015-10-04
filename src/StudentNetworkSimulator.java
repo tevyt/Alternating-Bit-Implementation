@@ -120,33 +120,31 @@ public class StudentNetworkSimulator extends NetworkSimulator
     // (i.e. as a result of a toLayer3() being done by a B-side procedure)
     // arrives at the A-side.  "packet" is the (possibly corrupted) packet
     // sent from the B-side.
-    protected void aInput(Packet packet)
-    {
+    protected void aInput(Packet packet){
+        Packet nextPacket;
       stopTimer(0);
-      System.out.println("Received ACK: " + packet);
-      Packet nextPacket;
-       if((nextPacket = senderState.nextPacket()) != null){
+        boolean expectedACK = expectedPacket(senderState.getAwaitedAcknowledgementNumber() ,packet.getAcknum() );
+        boolean corrupted = isCorrupted(packet , packet.getChecksum());
+        if(!expectedACK  || corrupted){
+         Packet retransmissionPacket = senderState.packet;
+            toLayer3(0, retransmissionPacket);
+            startTimer(0, 32);
+            if(corrupted)
+                System.out.println("Corrupted ACK , retransmitting: " + retransmissionPacket);
+            else
+                System.out.println("Received NACK retransmitting packet: " + retransmissionPacket);
+        }
+       else if((nextPacket = senderState.nextPacket()) != null){
+            System.out.println("Received ACK: " + packet);
            toLayer3(0 , nextPacket);
            System.out.println("Sent Packet: " + nextPacket);
            startTimer(0 , 32);
        }else{
+             System.out.println("Received ACK: " + packet);
            senderState.setNoUnacknowledgedPackets();
        }
-
-      //If the packet received does not have the expected ACK , retransmit the last unacknowledged ACK.
-      //if(!senderState.isExpectedPacket(packet)){
-      //   nextPacket = senderState.getLastUnacknowledgedPacket();
-      //   toLayer3(0 , nextPacket);
-      //   startTimer(0 , 5);
-      //}else if((nextPacket = senderState.nextPacket()) != null){ //If there are more packets waiting to be transmitted send the next one.
-      //   toLayer3(0 , nextPacket);
-      //    startTimer(0 , 5);
-      //   senderState.setNextExpectedAcknowledgementNumber();
-      //}else{ //Otherwise stop the timer and indicate that there are no currently unacknowledged packets.
-      //   stopTimer(0);
-      //   senderState.setNoUnacknowledgedPackets();
-      //}
     }
+
     
     // This routine will be called when A's timer expires (thus generating a 
     // timer interrupt). You'll probably want to use this routine to control 
@@ -159,6 +157,8 @@ public class StudentNetworkSimulator extends NetworkSimulator
       startTimer(0 , 32);
 	  System.out.println("Timeout retransmitting packet: " + retransmissionPacket);
     }
+
+
     
     // This routine will be called once, before any of your other A-side 
     // routines are called. It can be used to do any required
@@ -208,6 +208,7 @@ public class StudentNetworkSimulator extends NetworkSimulator
             this.packets = new LinkedList<>();
         }
 
+
         //Retrieve the ACK number that the sender awaits.
         public int getAwaitedAcknowledgementNumber() {
             return acknowledgementNumber;
@@ -215,7 +216,7 @@ public class StudentNetworkSimulator extends NetworkSimulator
 
         //Set AcknowledgementNumber to the sequence number of a packet.
         public void setNextExpectedAcknowledgementNumber() {
-            this.acknowledgementNumber = sequenceNumber % 2;
+            this.acknowledgementNumber = (sequenceNumber-1) % 2;//The previously delivered sequence number
         }
 
         //Return a copy of the last unacknowledged packet.
@@ -247,11 +248,6 @@ public class StudentNetworkSimulator extends NetworkSimulator
            return packet;
         }
 
-        //Checks if the packet received is the one expected
-        public boolean isExpectedPacket(Packet packet){
-            return  packet.getAcknum() == acknowledgementNumber;
-        }
-
         public Packet nextPacket(){
             return packets.poll();
         }
@@ -259,6 +255,8 @@ public class StudentNetworkSimulator extends NetworkSimulator
         public void setNoUnacknowledgedPackets(){
            this.acknowledgementNumber = NO_UNACKNOWLEDGED_PACKETS;
         }
+
+
     }
 
 
@@ -267,11 +265,23 @@ public class StudentNetworkSimulator extends NetworkSimulator
         return sum;
     }
 
+    private static int computeCheckSum(Packet p){
+        return p.getSeqnum() + p.getAcknum() + characterSum(p.getPayload().toCharArray());
+    }
+
     private static int characterSum(char[] characters){
         int sum = 0;
         for(int current: characters){
             sum += current;
         }
         return sum;
+    }
+
+    private static boolean expectedPacket(int number , int packet ){
+       return  number == packet;
+    }
+
+    private boolean isCorrupted(Packet packet , int checksum){
+       return computeCheckSum(packet) != checksum;
     }
 }
