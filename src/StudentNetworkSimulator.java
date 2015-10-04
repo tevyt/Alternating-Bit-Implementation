@@ -82,6 +82,7 @@ public class StudentNetworkSimulator extends NetworkSimulator
      */
 
     SenderState senderState; //Class containing Senders information.
+    ReceiverState receiverState; //Similarly contains receivers state.
 
     // Add any necessary class variables here.  Remember, you cannot use
     // these variables to send messages error free!  They can only hold
@@ -110,8 +111,8 @@ public class StudentNetworkSimulator extends NetworkSimulator
       if(!senderState.hasUnacknowledgedPackets()) {
           Packet p = senderState.preparePacket();
           senderState.setNextExpectedAcknowledgementNumber();
-          toLayer3(0, p);
           System.out.println("Sent Packet: " + p);
+          toLayer3(0, p);
           startTimer(0, 32);
       }
     }
@@ -127,21 +128,22 @@ public class StudentNetworkSimulator extends NetworkSimulator
         boolean corrupted = isCorrupted(packet , packet.getChecksum());
         if(!expectedACK  || corrupted){
          Packet retransmissionPacket = senderState.packet;
-            toLayer3(0, retransmissionPacket);
-            startTimer(0, 32);
             if(corrupted)
                 System.out.println("Corrupted ACK , retransmitting: " + retransmissionPacket);
             else
                 System.out.println("Received NACK retransmitting packet: " + retransmissionPacket);
+            toLayer3(0, retransmissionPacket);
+            startTimer(0, 32);
         }
        else if((nextPacket = senderState.nextPacket()) != null){
             System.out.println("Received ACK: " + packet);
-           toLayer3(0 , nextPacket);
-           System.out.println("Sent Packet: " + nextPacket);
+            System.out.println("Sent Packet: " + nextPacket);
+           toLayer3(0, nextPacket);
+            senderState.setNextExpectedAcknowledgementNumber();
            startTimer(0 , 32);
        }else{
              System.out.println("Received ACK: " + packet);
-           senderState.setNoUnacknowledgedPackets();
+             senderState.setNoUnacknowledgedPackets();
        }
     }
 
@@ -153,9 +155,9 @@ public class StudentNetworkSimulator extends NetworkSimulator
     protected void aTimerInterrupt()
     {
       Packet retransmissionPacket = senderState.packet;
-      toLayer3(0 , retransmissionPacket);
-      startTimer(0 , 32);
 	  System.out.println("Timeout retransmitting packet: " + retransmissionPacket);
+      toLayer3(0, retransmissionPacket);
+      startTimer(0, 32);
     }
 
 
@@ -175,16 +177,34 @@ public class StudentNetworkSimulator extends NetworkSimulator
     // sent from the A-side.
     protected void bInput(Packet packet)
     {
-	  System.out.println("Received packet: " + packet);
-	  toLayer3(1, packet);
+        System.out.println("Received packet: " + packet);
+        if(!isCorrupted(packet, packet.getChecksum())){
+            Packet ack = createACK(packet.getSeqnum() , "ACK");
+            System.out.println("Sent ACK: " + ack);
+            toLayer3(1, ack);
+            if(packet.getSeqnum() == receiverState.expectedSequenceNumber)
+                receiverState.incrementExpectedSequenceNumber();
+        }else{
+            Packet nack = createACK(receiverState.expectedSequenceNumber , "NACK");
+            System.out.println("Corrupted Packet");
+            System.out.println("Sent NACK: " + nack);
+            toLayer3(1 , nack);
+        }
     }
-    
+
+    private Packet createACK(int ackNumber , String message) {
+        int sequenceNumber = ackNumber;
+        int checkSum = computeCheckSum(sequenceNumber, ackNumber, message);
+        return new Packet(sequenceNumber, ackNumber, checkSum, message);
+    }
+
     // This routine will be called once, before any of your other B-side 
     // routines are called. It can be used to do any required
     // initialization (e.g. of member variables you add to control the state
     // of entity B).
     protected void bInit()
     {
+        receiverState = new ReceiverState();
     }
 
 	public static void main(String []args) {
@@ -283,5 +303,17 @@ public class StudentNetworkSimulator extends NetworkSimulator
 
     private boolean isCorrupted(Packet packet , int checksum){
        return computeCheckSum(packet) != checksum;
+    }
+
+    private static class ReceiverState{
+        int expectedSequenceNumber;
+
+        public ReceiverState(){
+            this.expectedSequenceNumber = 0;
+        }
+
+        public void incrementExpectedSequenceNumber(){
+            expectedSequenceNumber = (expectedSequenceNumber + 1) % 2; //Even numbered transmissions will have a sequence number of 1
+        }
     }
 }
