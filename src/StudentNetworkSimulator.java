@@ -1,4 +1,3 @@
-import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.Queue;
 
@@ -107,11 +106,13 @@ public class StudentNetworkSimulator extends NetworkSimulator
     // the receiving upper layer.
     protected void aOutput(Message message)
     {
-      senderState.addPacketToQueue(message);
+      System.out.println("Received Message from Layer5 Created packet: " + senderState.addPacketToQueue(message));
       if(!senderState.hasUnacknowledgedPackets()) {
           Packet p = senderState.preparePacket();
+          senderState.setNextExpectedAcknowledgementNumber();
           toLayer3(0, p);
-          startTimer(0, 5);
+          System.out.println("Sent Packet: " + p);
+          startTimer(0, 32);
       }
     }
 
@@ -121,21 +122,30 @@ public class StudentNetworkSimulator extends NetworkSimulator
     // sent from the B-side.
     protected void aInput(Packet packet)
     {
+      stopTimer(0);
+      System.out.println("Received ACK: " + packet);
       Packet nextPacket;
-      System.out.println("Received ACK");
+       if((nextPacket = senderState.nextPacket()) != null){
+           toLayer3(0 , nextPacket);
+           System.out.println("Sent Packet: " + nextPacket);
+           startTimer(0 , 32);
+       }else{
+           senderState.setNoUnacknowledgedPackets();
+       }
+
       //If the packet received does not have the expected ACK , retransmit the last unacknowledged ACK.
-      if(!senderState.isExpectedPacket(packet)){
-         nextPacket = senderState.getLastUnacknowledgedPacket();
-         toLayer3(0 , nextPacket);
-         startTimer(0 , 5);
-      }else if((nextPacket = senderState.nextPacket()) != null){ //If there are more packets waiting to be transmitted send the next one.
-         toLayer3(0 , nextPacket);
-          startTimer(0 , 5);
-         senderState.setNextExpectedAcknowledgementNumber();
-      }else{ //Otherwise stop the timer and indicate that there are no currently unacknowledged packets.
-         stopTimer(0);
-         senderState.setNoUnacknowledgedPackets();
-      }
+      //if(!senderState.isExpectedPacket(packet)){
+      //   nextPacket = senderState.getLastUnacknowledgedPacket();
+      //   toLayer3(0 , nextPacket);
+      //   startTimer(0 , 5);
+      //}else if((nextPacket = senderState.nextPacket()) != null){ //If there are more packets waiting to be transmitted send the next one.
+      //   toLayer3(0 , nextPacket);
+      //    startTimer(0 , 5);
+      //   senderState.setNextExpectedAcknowledgementNumber();
+      //}else{ //Otherwise stop the timer and indicate that there are no currently unacknowledged packets.
+      //   stopTimer(0);
+      //   senderState.setNoUnacknowledgedPackets();
+      //}
     }
     
     // This routine will be called when A's timer expires (thus generating a 
@@ -146,8 +156,8 @@ public class StudentNetworkSimulator extends NetworkSimulator
     {
       Packet retransmissionPacket = senderState.packet;
       toLayer3(0 , retransmissionPacket);
-      startTimer(0 , 5);
-	  System.out.println("Timer");
+      startTimer(0 , 32);
+	  System.out.println("Timeout retransmitting packet: " + retransmissionPacket);
     }
     
     // This routine will be called once, before any of your other A-side 
@@ -165,7 +175,7 @@ public class StudentNetworkSimulator extends NetworkSimulator
     // sent from the A-side.
     protected void bInput(Packet packet)
     {
-	  System.out.println("Received packet ");
+	  System.out.println("Received packet: " + packet);
 	  toLayer3(1, packet);
     }
     
@@ -205,7 +215,7 @@ public class StudentNetworkSimulator extends NetworkSimulator
 
         //Set AcknowledgementNumber to the sequence number of a packet.
         public void setNextExpectedAcknowledgementNumber() {
-            this.acknowledgementNumber++;
+            this.acknowledgementNumber = sequenceNumber % 2;
         }
 
         //Return a copy of the last unacknowledged packet.
@@ -217,11 +227,12 @@ public class StudentNetworkSimulator extends NetworkSimulator
             this.packet = new Packet(packet);
         }
 
-        public void addPacketToQueue(Message message){
-            int sequenceNumber = ++this.sequenceNumber;
-            int checkSum = computeCheckSum(sequenceNumber , 0 , message.getData());
-            Packet packet = new Packet(sequenceNumber , 0 , checkSum, message.getData());
+        public Packet addPacketToQueue(Message message){
+            int sequenceNumber = this.sequenceNumber++ % 2;//If this is an even numbered packet its sequence number should be 0 otherwise it should be one.
+            int checkSum = computeCheckSum(sequenceNumber , sequenceNumber , message.getData());
+            Packet packet = new Packet(sequenceNumber , sequenceNumber , checkSum, message.getData());
             packets.add(packet);
+            return packet;
         }
 
         public boolean hasUnacknowledgedPackets(){
@@ -232,7 +243,6 @@ public class StudentNetworkSimulator extends NetworkSimulator
            Packet packet = packets.poll(); //Get the next packet in the Queue
            if(packet != null){
               setPacket(packet);
-              this.acknowledgementNumber = packet.getSeqnum();//set expected acknowledgment number to the sequence number of the sent packet.
            }
            return packet;
         }
